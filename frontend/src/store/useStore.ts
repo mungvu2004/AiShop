@@ -129,6 +129,7 @@ interface AppState {
     periods: number;
     n_changepoints: number;
     changepoint_range: number;
+    daily_seasonality: boolean;
     yearly_seasonality: boolean;
     weekly_seasonality: boolean;
     seasonality_prior_scale: number;
@@ -145,6 +146,10 @@ interface AppState {
     learning_rate: number;
     aggregation: string;
     periods: number;
+    early_stopping: boolean;
+    patience: number;
+    min_delta: number;
+    shuffle: boolean;
     num_layers: number;
     units: number;
     dropout: number;
@@ -214,6 +219,7 @@ export const useStore = create<AppState>((set) => ({
     periods: 30,
     n_changepoints: 25,
     changepoint_range: 0.8,
+    daily_seasonality: false,
     yearly_seasonality: true,
     weekly_seasonality: true,
     seasonality_prior_scale: 10.0,
@@ -231,6 +237,10 @@ export const useStore = create<AppState>((set) => ({
     learning_rate: 0.001,
     aggregation: 'D',
     periods: 30,
+    early_stopping: true,
+    patience: 10,
+    min_delta: 0.0001,
+    shuffle: false,
     num_layers: 1,
     units: 50,
     dropout: 0.0,

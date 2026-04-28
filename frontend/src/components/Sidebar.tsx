@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react';
 import { Activity, BarChart2, Database, Cpu, FlaskConical } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { ActiveTab } from '../store/useStore';
 
-const NAV_ITEMS: { id: ActiveTab; icon: React.ReactNode; label: string; desc: string }[] = [
+const NAV_ITEMS: { id: ActiveTab; icon: ReactNode; label: string; desc: string }[] = [
   { id: 'dashboard', icon: <BarChart2 className="w-5 h-5" />, label: 'Bảng tổng quan', desc: 'Xem kết quả dự báo và chỉ số đánh giá' },
   { id: 'data', icon: <Database className="w-5 h-5" />, label: 'Khám phá dữ liệu', desc: 'Phân tích và trực quan hoá tập dữ liệu' },
   { id: 'training', icon: <Cpu className="w-5 h-5" />, label: 'Huấn luyện', desc: 'Cấu hình và chạy mô hình Prophet / LSTM' },

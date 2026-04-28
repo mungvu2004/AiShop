@@ -20,6 +20,7 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shouldReconnect = useRef(true);
+  const connectRef = useRef<() => void>(() => {});
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -37,7 +38,11 @@ function App() {
         if (data.type === 'progress') {
           setProgress(data.progress ?? 0);
           if (data.epoch !== undefined && data.loss !== undefined) {
-            addTrainingEpoch({ epoch: data.epoch, loss: data.loss });
+            addTrainingEpoch({
+              epoch: data.epoch,
+              loss: data.loss,
+              val_loss: typeof data.val_loss === 'number' ? data.val_loss : undefined,
+            });
           }
         } else if (data.type === 'complete') {
           setProgress(100);
@@ -54,10 +59,16 @@ function App() {
     ws.onclose = () => {
       wsRef.current = null;
       if (shouldReconnect.current) {
-        reconnectTimerRef.current = setTimeout(connect, RECONNECT_DELAY);
+        reconnectTimerRef.current = setTimeout(() => {
+          connectRef.current();
+        }, RECONNECT_DELAY);
       }
     };
   }, [setProgress, addTrainingEpoch]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     shouldReconnect.current = true;

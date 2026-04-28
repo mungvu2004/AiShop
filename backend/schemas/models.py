@@ -19,6 +19,7 @@ class ProphetConfig(BaseModel):
 
     # Mùa vụ
     seasonality_mode: str = Field(default="additive", pattern="^(additive|multiplicative)$")
+    daily_seasonality: bool = Field(default=False)
     yearly_seasonality: bool = Field(default=True)
     weekly_seasonality: bool = Field(default=True)
     seasonality_prior_scale: float = Field(default=10.0, ge=0.1, le=100.0)
@@ -42,6 +43,10 @@ class LSTMConfig(BaseModel):
     batch_size: int = Field(default=32, ge=1, le=512)
     learning_rate: float = Field(default=0.001, ge=0.0001, le=0.1)
     validation_split: float = Field(default=0.1, ge=0.0, le=0.3)
+    early_stopping: bool = Field(default=True)
+    patience: int = Field(default=10, ge=1, le=50)
+    min_delta: float = Field(default=0.0001, ge=0.0, le=1.0)
+    shuffle: bool = Field(default=False)
 
     # Kiến trúc mô hình
     model_arch: MODEL_ARCH = Field(default="LSTM")

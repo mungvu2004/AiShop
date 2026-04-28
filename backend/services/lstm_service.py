@@ -126,6 +126,10 @@ async def train_lstm(
     units: int = 50,
     dropout: float = 0.0,
     validation_split: float = 0.1,
+    early_stopping: bool = True,
+    patience: int = 10,
+    min_delta: float = 0.0001,
+    shuffle: bool = False,
     model_arch: str = "LSTM",
 ):
     scaler = MinMaxScaler(feature_range=(0, 1))
@@ -138,11 +142,23 @@ async def train_lstm(
     epoch_logs: list = []
     ws_callback = WebSocketCallback(epochs, epoch_logs)
 
+    callbacks = [ws_callback]
+    if early_stopping and validation_split > 0:
+        callbacks.append(
+            EarlyStopping(
+                monitor='val_loss',
+                patience=patience,
+                min_delta=min_delta,
+                restore_best_weights=True,
+            )
+        )
+
     fit_kwargs: dict = {
         "epochs": epochs,
         "batch_size": batch_size,
         "verbose": 0,
-        "callbacks": [ws_callback],
+        "callbacks": callbacks,
+        "shuffle": shuffle,
     }
     if validation_split > 0:
         fit_kwargs["validation_split"] = validation_split

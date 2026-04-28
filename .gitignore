@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Backend logs and runtime artifacts
+*.log
+backend_test.log
+
+# TensorFlow / training / temp outputs
+*.h5
+*.keras
+*.ckpt
+*.pb
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+node_modules/
+dist/
+
+# Environment / local config
+.env
+.env.*
+*.local
+
+# IDE / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.swp
+*.swo
+
+# Test and sandbox temp directories
+pytest-cache-files-*/
+.tmp*/
+tmp/
+temp/

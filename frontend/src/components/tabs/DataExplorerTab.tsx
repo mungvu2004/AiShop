@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import axios from 'axios';
 import {
   LineChart, Line, BarChart, Bar, AreaChart, Area,
@@ -14,7 +15,7 @@ const COLORS = ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed'
 
 // ── Tiện ích ──────────────────────────────────────────────────
 
-const SectionTitle = ({ children, tooltip }: { children: React.ReactNode; tooltip?: string }) => (
+const SectionTitle = ({ children, tooltip }: { children: ReactNode; tooltip?: string }) => (
   <div className="flex items-center gap-1 mb-3">
     <h3 className="text-base font-semibold text-gray-700">{children}</h3>
     {tooltip && <HelpTooltip text={tooltip} />}
@@ -32,7 +33,7 @@ const StatCard = ({ label, value, tooltip }: { label: string; value: string | nu
 );
 
 const Section = ({ title, tooltip, children, defaultOpen = true }: {
-  title: string; tooltip?: string; children: React.ReactNode; defaultOpen?: boolean;
+  title: string; tooltip?: string; children: ReactNode; defaultOpen?: boolean;
 }) => {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -57,7 +58,7 @@ const Section = ({ title, tooltip, children, defaultOpen = true }: {
 export const DataExplorerTab = () => {
   const { dataInfo, setDataInfo, isLoadingData, setIsLoadingData, addToast } = useStore();
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoadingData(true);
     try {
       const res = await axios.get('http://localhost:8000/data/info');
@@ -68,11 +69,13 @@ export const DataExplorerTab = () => {
     } finally {
       setIsLoadingData(false);
     }
-  };
+  }, [addToast, setDataInfo, setIsLoadingData]);
 
   useEffect(() => {
-    if (!dataInfo) loadData();
-  }, []);
+    if (!dataInfo) {
+      void loadData();
+    }
+  }, [dataInfo, loadData]);
 
   if (isLoadingData) {
     return (
@@ -142,7 +145,7 @@ export const DataExplorerTab = () => {
 
       {/* ── Bước 1: Thống kê tổng quan ── */}
       <Section title="Bước 1 — Thống kê tổng quan" tooltip="Các chỉ số cơ bản sau khi tải và làm sạch dữ liệu">
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-4">
           <StatCard label="Tổng bản ghi" value={stats.total_records.toLocaleString()} tooltip="Số dòng gốc trong tệp CSV trước khi làm sạch" />
           <StatCard label="TB hàng ngày" value={stats.mean_daily.toFixed(1)} tooltip="Trung bình số lượng đơn hàng mỗi ngày sau tổng hợp" />
           <StatCard label="Cao nhất/ngày" value={stats.max_daily.toLocaleString()} tooltip="Ngày có số lượng đơn hàng cao nhất trong toàn bộ lịch sử" />
@@ -187,7 +190,7 @@ export const DataExplorerTab = () => {
           </LineChart>
         </ResponsiveContainer>
 
-        <div className="grid grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
           <div>
             <SectionTitle tooltip="Mỗi cột là số ngày rơi vào khoảng giá trị đó. Phân phối lệch phải thường gặp trong đơn hàng">Phân phối số lượng hàng ngày</SectionTitle>
             <ResponsiveContainer width="100%" height={200}>
@@ -245,7 +248,7 @@ export const DataExplorerTab = () => {
       {/* ── Bước 3: Phân tích danh mục ── */}
       {(categories.length > 0 || markets.length > 0) && (
         <Section title="Bước 3 — Phân tích danh mục & Thị trường" tooltip="Hiểu cấu trúc dữ liệu: sản phẩm và thị trường nào chiếm tỷ trọng lớn nhất">
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
             {categories.length > 0 && (
               <div>
                 <SectionTitle tooltip="Top 12 danh mục sản phẩm theo tổng số lượng. Cho thấy danh mục nào ảnh hưởng nhiều nhất đến dự báo">Top danh mục sản phẩm</SectionTitle>

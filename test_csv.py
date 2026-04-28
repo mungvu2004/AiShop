@@ -1,40 +1,24 @@
+from pathlib import Path
+
 import pandas as pd
-import sys
 
-DATA_PATH = r"F:\LtsmandProphet\data\DataCoSupplyChainDataset.csv"
+DATA_PATH = Path(__file__).resolve().parent / 'data' / 'DataCoSupplyChainDataset.csv'
 
-def test():
-    try:
-        print("Loading CSV...")
-        sys.stdout.flush()
-        columns = ["shipping date (DateOrders)", "Order Item Quantity"]
-        df = pd.read_csv(DATA_PATH, usecols=columns, encoding='latin1')
-        print(f"Loaded CSV. Shape: {df.shape}")
-        sys.stdout.flush()
-        
-        df.rename(columns={
-            "shipping date (DateOrders)": "ds",
-            "Order Item Quantity": "y"
-        }, inplace=True)
-        
-        print("Converting datetime...")
-        sys.stdout.flush()
-        df['ds'] = pd.to_datetime(df['ds'], errors='coerce')
-        print("Datetime converted.")
-        sys.stdout.flush()
-        
-        df.dropna(subset=['ds', 'y'], inplace=True)
-        print("Dropped NaNs.")
-        sys.stdout.flush()
-        
-        df.set_index('ds', inplace=True)
-        df_agg = df.resample('W').sum().reset_index()
-        print(f"Aggregated. Final shape: {df_agg.shape}")
-        sys.stdout.flush()
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
 
-if __name__ == "__main__":
-    test()
+def test_csv_loads_and_aggregates():
+    columns = ['shipping date (DateOrders)', 'Order Item Quantity']
+    df = pd.read_csv(DATA_PATH, usecols=columns, encoding='latin1')
+
+    assert not df.empty
+
+    df = df.rename(columns={
+        'shipping date (DateOrders)': 'ds',
+        'Order Item Quantity': 'y',
+    })
+
+    df['ds'] = pd.to_datetime(df['ds'], errors='coerce')
+    df = df.dropna(subset=['ds', 'y']).set_index('ds')
+    weekly = df.resample('W').sum().reset_index()
+
+    assert not weekly.empty
+    assert {'ds', 'y'}.issubset(weekly.columns)
