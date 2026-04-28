@@ -46,8 +46,41 @@ def test_pipeline_summary():
     assert summary['start_date'] <= summary['end_date']
 
 
-def test_prophet():
+def test_prophet_train_smoke(monkeypatch):
     df = _sample_df()
+
+    class DummyProphet:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.train_df = None
+
+        def fit(self, frame):
+            self.train_df = frame.copy()
+            return self
+
+        def make_future_dataframe(self, periods, freq):
+            assert self.train_df is not None
+            last_date = pd.to_datetime(self.train_df['ds'].iloc[-1])
+            future_dates = pd.date_range(start=last_date, periods=periods + 1, freq=freq)[1:]
+            return pd.DataFrame({'ds': pd.concat([self.train_df['ds'], pd.Series(future_dates)], ignore_index=True)})
+
+        def predict(self, frame):
+            ds = pd.to_datetime(frame['ds'])
+            index = np.arange(len(ds), dtype=float)
+            base = 100 + index
+            return pd.DataFrame({
+                'ds': ds,
+                'yhat': base,
+                'yhat_lower': base - 5,
+                'yhat_upper': base + 5,
+                'trend': base * 0.9,
+                'weekly': np.sin(index / 3.0),
+                'yearly': np.cos(index / 5.0),
+            })
+
+    monkeypatch.setattr('backend.services.prophet_service.Prophet', DummyProphet)
+    monkeypatch.setattr('backend.services.evaluation_service.Prophet', DummyProphet)
+
     result = train_prophet(
         df,
         changepoint_prior_scale=0.05,

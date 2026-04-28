@@ -22,11 +22,8 @@ class ConnectionManager:
 
     def broadcast_sync(self, message: dict):
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(self.broadcast(message))
-            else:
-                asyncio.run(self.broadcast(message))
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.broadcast(message))
         except RuntimeError:
             asyncio.run(self.broadcast(message))
 
