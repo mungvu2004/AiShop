@@ -85,16 +85,25 @@ def build_model(
 
 
 class WebSocketCallback(tf.keras.callbacks.Callback):
-    def __init__(self, total_epochs: int, epoch_logs_ref: list):
+    def __init__(
+        self,
+        total_epochs: int,
+        epoch_logs_ref: list,
+        progress_start: float = 24.0,
+        progress_end: float = 78.0,
+    ):
         super().__init__()
         self.total_epochs = total_epochs
         self.epoch_logs_ref = epoch_logs_ref
+        self.progress_start = progress_start
+        self.progress_end = progress_end
 
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
         loss = float(logs.get('loss', 0))
         val_loss = float(logs['val_loss']) if 'val_loss' in logs else None
-        progress = ((epoch + 1) / self.total_epochs) * 100
+        fit_progress = ((epoch + 1) / self.total_epochs)
+        progress = self.progress_start + fit_progress * (self.progress_end - self.progress_start)
 
         entry = {"epoch": epoch + 1, "loss": round(loss, 6)}
         if val_loss is not None:

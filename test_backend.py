@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import pytest
 
 from backend.services.data_service import get_data_info
 from backend.services.data_pipeline import load_and_preprocess
@@ -10,6 +11,7 @@ from backend.services.prophet_service import train_prophet
 from backend.services.evaluation_service import (
     compute_error_analysis,
 )
+from backend.api.websockets import ConnectionManager
 
 DATA_PATH = Path(__file__).resolve().parent / 'data' / 'DataCoSupplyChainDataset.csv'
 
@@ -163,3 +165,40 @@ def test_error_analysis_helper():
     assert error_analysis is not None
     assert error_analysis['histogram']
     assert error_analysis['rolling_mae']
+
+
+def test_pipeline_rejects_empty_series():
+    tmp_dir = Path('test_tmp_model_runs')
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = tmp_dir / 'empty_series_fixture.csv'
+    csv_path.write_text(
+        'shipping date (DateOrders),Order Item Quantity\n'
+        'invalid,10\n'
+        ',5\n',
+        encoding='utf-8',
+    )
+
+    with pytest.raises(ValueError, match='Không còn dữ liệu hợp lệ'):
+        load_and_preprocess(str(csv_path), aggregation='D')
+
+
+def test_websocket_broadcast_drops_stale_connections():
+    manager = ConnectionManager()
+    sent_messages = []
+
+    class GoodSocket:
+        async def send_json(self, message):
+            sent_messages.append(message)
+
+    class BadSocket:
+        async def send_json(self, message):
+            raise RuntimeError('socket closed')
+
+    good = GoodSocket()
+    bad = BadSocket()
+    manager.active_connections = [good, bad]
+
+    asyncio.run(manager.broadcast({'type': 'status', 'progress': 50}))
+
+    assert sent_messages == [{'type': 'status', 'progress': 50}]
+    assert manager.active_connections == [good]

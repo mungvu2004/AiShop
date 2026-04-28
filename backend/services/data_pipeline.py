@@ -52,6 +52,9 @@ def load_and_preprocess(
         trimmed_trailing_zero_rows = rows_after_resample - last_nonzero - 1
         df_agg = df_agg.loc[first_nonzero:last_nonzero].reset_index(drop=True)
 
+    if df_agg.empty:
+        raise ValueError("Không còn dữ liệu hợp lệ sau tiền xử lý.")
+
     if not include_summary:
         return df_agg
 
