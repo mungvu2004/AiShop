@@ -2,6 +2,12 @@ from prophet import Prophet
 import pandas as pd
 import numpy as np
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from backend.api.websockets import manager
+from backend.services.evaluation_service import (
+    build_prophet_backtest,
+    build_prophet_split_summary,
+    compute_error_analysis,
+)
 
 
 def mean_absolute_percentage_error(y_true, y_pred):
@@ -27,6 +33,12 @@ def train_prophet(
     interval_width: float = 0.8,
     uncertainty_samples: int = 1000,
 ):
+    manager.broadcast_sync({
+        "type": "status",
+        "progress": 16,
+        "phase": "prophet_fit",
+        "message": "Đang fit Prophet trên toàn bộ lịch sử đã tiền xử lý.",
+    })
     model = Prophet(
         changepoint_prior_scale=changepoint_prior_scale,
         seasonality_mode=seasonality_mode,
@@ -42,6 +54,12 @@ def train_prophet(
     model.fit(df)
 
     # Dự đoán trên tập huấn luyện để tính metrics
+    manager.broadcast_sync({
+        "type": "status",
+        "progress": 54,
+        "phase": "prophet_in_sample_eval",
+        "message": "Đang tạo dự báo nội suy trên lịch sử để tính metric.",
+    })
     forecast_train = model.predict(df)
     y_true = df['y'].values
     y_pred = forecast_train['yhat'].values
@@ -51,6 +69,12 @@ def train_prophet(
     mape = mean_absolute_percentage_error(y_true, y_pred)
 
     # Dự báo tương lai
+    manager.broadcast_sync({
+        "type": "status",
+        "progress": 72,
+        "phase": "prophet_future_forecast",
+        "message": "Đang sinh các kỳ tương lai và thành phần mùa vụ.",
+    })
     future = model.make_future_dataframe(periods=periods, freq=freq)
     forecast = model.predict(future)
 
@@ -88,10 +112,45 @@ def train_prophet(
             "yearly": float(row['yearly']) if has_yearly else None,
         })
 
+    manager.broadcast_sync({
+        "type": "status",
+        "progress": 86,
+        "phase": "prophet_backtest",
+        "message": "Đang chạy rolling-origin backtest và phân tích phần dư.",
+    })
+    backtest = build_prophet_backtest(
+        df=df,
+        periods=periods,
+        freq=freq,
+        changepoint_prior_scale=changepoint_prior_scale,
+        seasonality_mode=seasonality_mode,
+        n_changepoints=n_changepoints,
+        changepoint_range=changepoint_range,
+        daily_seasonality=daily_seasonality,
+        yearly_seasonality=yearly_seasonality,
+        weekly_seasonality=weekly_seasonality,
+        seasonality_prior_scale=seasonality_prior_scale,
+        interval_width=interval_width,
+        uncertainty_samples=uncertainty_samples,
+    )
+    error_analysis = compute_error_analysis(data_points)
+    split_summary = build_prophet_split_summary(df=df, periods=periods, freq=freq)
+
+    manager.broadcast_sync({
+        "type": "status",
+        "progress": 96,
+        "phase": "prophet_packaging",
+        "message": "Đang đóng gói artifact, metric và dữ liệu trực quan.",
+    })
+
     return {
         "metrics": {"mae": mae, "rmse": rmse, "mape": mape},
         "data": data_points,
         "training_history": None,
         "prophet_components": prophet_components,
+        "backtest": backtest,
+        "error_analysis": error_analysis,
+        "split_summary": split_summary,
         "model_type": "Prophet",
+        "_trained_model": model,
     }

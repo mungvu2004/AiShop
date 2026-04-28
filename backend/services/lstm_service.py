@@ -12,6 +12,11 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from backend.api.websockets import manager
+from backend.services.evaluation_service import (
+    build_lstm_backtest,
+    build_lstm_split_summary,
+    compute_error_analysis,
+)
 import asyncio
 
 
@@ -132,11 +137,23 @@ async def train_lstm(
     shuffle: bool = False,
     model_arch: str = "LSTM",
 ):
+    await manager.broadcast({
+        "type": "status",
+        "progress": 8,
+        "phase": "lstm_preprocessing",
+        "message": "Đang chuẩn hóa chuỗi và tạo dataset look_back.",
+    })
     scaler = MinMaxScaler(feature_range=(0, 1))
     scaled_data = scaler.fit_transform(df['y'].values.reshape(-1, 1))
 
     X, Y = create_dataset(scaled_data, look_back)
 
+    await manager.broadcast({
+        "type": "status",
+        "progress": 18,
+        "phase": "lstm_build_model",
+        "message": f"Đang khởi tạo kiến trúc {model_arch} với {num_layers} tầng.",
+    })
     model = build_model(look_back, num_layers, units, dropout, model_arch, learning_rate)
 
     epoch_logs: list = []
@@ -163,6 +180,12 @@ async def train_lstm(
     if validation_split > 0:
         fit_kwargs["validation_split"] = validation_split
 
+    await manager.broadcast({
+        "type": "status",
+        "progress": 24,
+        "phase": "lstm_fit",
+        "message": "Bắt đầu huấn luyện theo epoch và theo dõi loss/val_loss.",
+    })
     history = model.fit(X, Y, **fit_kwargs)
 
     # Ghi lại lịch sử (phòng khi WS không kết nối)
@@ -184,6 +207,13 @@ async def train_lstm(
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
     mape = mean_absolute_percentage_error(y_true, y_pred)
+
+    await manager.broadcast({
+        "type": "status",
+        "progress": 82,
+        "phase": "lstm_evaluation",
+        "message": "Đang tính metric, walk-forward backtest và phân tích sai số.",
+    })
 
     # Dự báo tương lai (autoregressive)
     last_seq = scaled_data[-look_back:].reshape(1, look_back, 1)  # (1, look_back, 1)
@@ -226,6 +256,24 @@ async def train_lstm(
             "upper_bound": None,
         })
 
+    backtest = build_lstm_backtest(
+        df=df,
+        scaled_data=scaled_data,
+        scaler=scaler,
+        model=model,
+        look_back=look_back,
+        periods=periods,
+        freq=freq,
+    )
+    error_analysis = compute_error_analysis(data_points)
+    split_summary = build_lstm_split_summary(
+        df=df,
+        look_back=look_back,
+        periods=periods,
+        validation_split=validation_split,
+        freq=freq,
+    )
+
     await manager.broadcast({"type": "complete", "progress": 100})
 
     return {
@@ -233,5 +281,10 @@ async def train_lstm(
         "data": data_points,
         "training_history": epoch_logs,
         "prophet_components": None,
+        "backtest": backtest,
+        "error_analysis": error_analysis,
+        "split_summary": split_summary,
         "model_type": f"{model_arch}",
+        "_trained_model": model,
+        "_scaler": scaler,
     }

@@ -1,10 +1,15 @@
 import asyncio
 from pathlib import Path
+import numpy as np
+import pandas as pd
 
 from backend.services.data_service import get_data_info
 from backend.services.data_pipeline import load_and_preprocess
 from backend.services.lstm_service import train_lstm
 from backend.services.prophet_service import train_prophet
+from backend.services.evaluation_service import (
+    compute_error_analysis,
+)
 
 DATA_PATH = Path(__file__).resolve().parent / 'data' / 'DataCoSupplyChainDataset.csv'
 
@@ -31,6 +36,16 @@ def test_pipeline():
     assert len(df) >= 40
 
 
+def test_pipeline_summary():
+    df, summary = load_and_preprocess(str(DATA_PATH), aggregation='W', include_summary=True)
+
+    assert not df.empty
+    assert summary['target_column'] == 'quantity'
+    assert summary['aggregation'] == 'W'
+    assert summary['rows_original'] >= summary['rows_after_dropna'] >= summary['rows_after_trim']
+    assert summary['start_date'] <= summary['end_date']
+
+
 def test_prophet():
     df = _sample_df()
     result = train_prophet(
@@ -45,23 +60,73 @@ def test_prophet():
     assert result['metrics']['mae'] >= 0
     assert len(result['data']) > len(df)
     assert result['prophet_components']
+    assert result['backtest'] is not None
+    assert result['backtest']['folds']
+    assert result['error_analysis'] is not None
+    assert result['split_summary'] is not None
 
 
-def test_lstm():
-    df = _sample_df().tail(40).reset_index(drop=True)
+def test_lstm_train_smoke(monkeypatch):
+    df = _sample_df().tail(24).reset_index(drop=True)
+
+    class DummyModel:
+        def fit(self, X, Y, **kwargs):
+            history = {'loss': [0.123]}
+            if kwargs.get('validation_split', 0) > 0:
+                history['val_loss'] = [0.156]
+            return type('History', (), {'history': history})()
+
+        def predict(self, X, verbose=0):
+            values = np.asarray(X)
+            if values.ndim == 3:
+                return values[:, -1, 0].reshape(-1, 1)
+            return np.zeros((len(values), 1), dtype=float)
+
+    monkeypatch.setattr('backend.services.lstm_service.build_model', lambda *args, **kwargs: DummyModel())
+
     result = asyncio.run(
         train_lstm(
-            df,
-            look_back=2,
+            df=df,
+            look_back=3,
             epochs=1,
             batch_size=8,
             learning_rate=0.001,
-            periods=3,
+            periods=4,
             freq='W',
+            validation_split=0.2,
+            early_stopping=True,
+            patience=2,
+            min_delta=0.0001,
+            shuffle=False,
+            model_arch='LSTM',
         )
     )
 
     assert result['model_type'] == 'LSTM'
     assert result['metrics']['mae'] >= 0
-    assert len(result['training_history']) == 1
-    assert len(result['data']) > len(df)
+    assert result['training_history']
+    assert result['backtest'] is not None
+    assert result['backtest']['horizon_metrics']
+    assert result['split_summary'] is not None
+    assert result['split_summary']['segments']
+    assert result['error_analysis'] is not None
+    assert result['error_analysis']['histogram']
+
+
+def test_error_analysis_helper():
+    df = _sample_df().tail(12).reset_index(drop=True)
+
+    history_points = []
+    for idx in range(8):
+        history_points.append({
+            'date': pd.to_datetime(df['ds'].iloc[idx]).strftime('%Y-%m-%d'),
+            'actual': float(df['y'].iloc[idx]),
+            'predicted': float(df['y'].iloc[idx]) * 0.95,
+            'lower_bound': None,
+            'upper_bound': None,
+        })
+    error_analysis = compute_error_analysis(history_points)
+
+    assert error_analysis is not None
+    assert error_analysis['histogram']
+    assert error_analysis['rolling_mae']

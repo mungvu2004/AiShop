@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
   ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  Legend, ResponsiveContainer, ReferenceLine,
+  Legend, ResponsiveContainer, ReferenceLine, ScatterChart, Scatter, BarChart, LineChart,
 } from 'recharts';
 import { Download, Filter, BarChart2 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
@@ -22,7 +22,7 @@ const TARGET_LABEL: Record<string, string> = {
 };
 
 export const InferenceTab = () => {
-  const { chartData, metrics, trainedModelType, trainedTargetColumn } = useStore();
+  const { chartData, metrics, trainedModelType, trainedTargetColumn, trainedModelVersion, errorAnalysis } = useStore();
   const [filter, setFilter] = useState<ViewFilter>('all');
   const [searchDate, setSearchDate] = useState('');
 
@@ -39,6 +39,7 @@ export const InferenceTab = () => {
       .filter((d) => d.actual !== null && d.predicted !== null)
       .map((d) => ({
         date: d.date,
+        predicted: d.predicted as number,
         residual: (d.actual as number) - (d.predicted as number),
       })),
     [chartData]
@@ -80,7 +81,7 @@ export const InferenceTab = () => {
             <HelpTooltip text="Tab này giúp kiểm tra chất lượng dự báo, lọc từng nhóm điểm dữ liệu và xuất kết quả ra CSV." />
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            {trainedModelType} · {targetLabel} · {historicalCount.toLocaleString()} điểm lịch sử · {futureCount.toLocaleString()} kỳ tương lai
+            {trainedModelType}{trainedModelVersion ? ` (${trainedModelVersion})` : ''} · {targetLabel} · {historicalCount.toLocaleString()} điểm lịch sử · {futureCount.toLocaleString()} kỳ tương lai
           </p>
         </div>
         <button
@@ -121,6 +122,39 @@ export const InferenceTab = () => {
         </div>
       )}
 
+      {errorAnalysis && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+          <div className="glass-panel p-4">
+            <div className="flex items-center gap-1">
+              <p className="text-xs text-gray-500">Residual trung bình</p>
+              <HelpTooltip text="Nếu lệch xa 0, mô hình đang có xu hướng dự báo cao hoặc thấp một cách có hệ thống." />
+            </div>
+            <p className="text-xl font-bold text-gray-800 mt-1">{errorAnalysis.summary.mean_residual.toFixed(2)}</p>
+          </div>
+          <div className="glass-panel p-4">
+            <div className="flex items-center gap-1">
+              <p className="text-xs text-gray-500">Độ lệch chuẩn residual</p>
+              <HelpTooltip text="Đo độ phân tán của phần dư. Thấp hơn thường nghĩa là ổn định hơn." />
+            </div>
+            <p className="text-xl font-bold text-gray-800 mt-1">{errorAnalysis.summary.std_residual.toFixed(2)}</p>
+          </div>
+          <div className="glass-panel p-4">
+            <div className="flex items-center gap-1">
+              <p className="text-xs text-gray-500">P90 |error|</p>
+              <HelpTooltip text="90% sai số tuyệt đối nằm dưới ngưỡng này." />
+            </div>
+            <p className="text-xl font-bold text-gray-800 mt-1">{errorAnalysis.summary.p90_abs_error.toFixed(2)}</p>
+          </div>
+          <div className="glass-panel p-4">
+            <div className="flex items-center gap-1">
+              <p className="text-xs text-gray-500">Residual dương</p>
+              <HelpTooltip text="Tỷ lệ residual dương cao nghĩa là mô hình thường dự báo thấp hơn thực tế." />
+            </div>
+            <p className="text-xl font-bold text-gray-800 mt-1">{(errorAnalysis.summary.positive_residual_ratio * 100).toFixed(1)}%</p>
+          </div>
+        </div>
+      )}
+
       <div className="glass-panel p-5">
         <div className="flex items-center gap-1 mb-1">
           <h3 className="text-base font-semibold">Tổng quan dự báo</h3>
@@ -146,27 +180,93 @@ export const InferenceTab = () => {
       </div>
 
       {residuals.length > 0 && (
-        <div className="glass-panel p-5">
-          <div className="flex items-center gap-1 mb-1">
-            <h3 className="text-base font-semibold">Phân tích phần dư</h3>
-            <HelpTooltip text="Residual = thực tế - dự báo. Dương nghĩa là mô hình dự báo thấp hơn thực tế; âm nghĩa là dự báo cao hơn." />
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="glass-panel p-5">
+            <div className="flex items-center gap-1 mb-1">
+              <h3 className="text-base font-semibold">Residual theo thời gian</h3>
+              <HelpTooltip text="Residual = thực tế - dự báo. Dương nghĩa là mô hình dự báo thấp hơn thực tế; âm nghĩa là dự báo cao hơn." />
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Lý tưởng nhất là dao động quanh 0 và không tạo thành xu hướng có hệ thống.
+            </p>
+            <ResponsiveContainer width="100%" height={220}>
+              <ComposedChart
+                data={residuals.length > 500 ? residuals.slice(-500) : residuals}
+                margin={{ top: 5, right: 20, left: 10, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="date" fontSize={10} stroke="#9ca3af" interval="preserveStartEnd" />
+                <YAxis fontSize={10} stroke="#9ca3af" width={55} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v}`)} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: unknown) => [typeof v === 'number' ? v.toFixed(1) : '—', 'Residual']} />
+                <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="4 4" />
+                <Bar dataKey="residual" name="Residual" fill="#4f46e5" fillOpacity={0.6} radius={[2, 2, 0, 0]} />
+              </ComposedChart>
+            </ResponsiveContainer>
           </div>
-          <p className="text-xs text-gray-400 mb-3">
-            Lý tưởng nhất là dao động quanh 0 và không tạo thành xu hướng có hệ thống.
-          </p>
-          <ResponsiveContainer width="100%" height={200}>
-            <ComposedChart
-              data={residuals.length > 500 ? residuals.slice(-500) : residuals}
-              margin={{ top: 5, right: 20, left: 10, bottom: 0 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
-              <XAxis dataKey="date" fontSize={10} stroke="#9ca3af" interval="preserveStartEnd" />
-              <YAxis fontSize={10} stroke="#9ca3af" width={55} tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : `${v}`)} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(v: unknown) => [typeof v === 'number' ? v.toFixed(1) : '—', 'Residual']} />
-              <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="4 4" />
-              <Bar dataKey="residual" name="Residual" fill="#4f46e5" fillOpacity={0.6} radius={[2, 2, 0, 0]} />
-            </ComposedChart>
-          </ResponsiveContainer>
+
+          {errorAnalysis && (
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-1 mb-1">
+                <h3 className="text-base font-semibold">Histogram phần dư</h3>
+                <HelpTooltip text="Cho biết residual đang phân bố tập trung quanh 0 hay lệch sang một phía." />
+              </div>
+              <p className="text-xs text-gray-400 mb-3">
+                Histogram hẹp và cân quanh 0 thường là tín hiệu tốt hơn.
+              </p>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={errorAnalysis.histogram} margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                  <XAxis dataKey="label" fontSize={10} stroke="#9ca3af" interval={0} angle={-12} textAnchor="end" height={48} />
+                  <YAxis fontSize={10} stroke="#9ca3af" width={45} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  <Bar dataKey="count" name="Số điểm" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      )}
+
+      {errorAnalysis && (
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="glass-panel p-5">
+            <div className="flex items-center gap-1 mb-1">
+              <h3 className="text-base font-semibold">Residual vs predicted</h3>
+              <HelpTooltip text="Nếu residual phình to ở vùng predicted cao, mô hình có thể gặp heteroscedasticity hoặc drift theo mức nền." />
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Nhìn scatter này để xem sai số có tăng theo mức dự báo hay không.
+            </p>
+            <ResponsiveContainer width="100%" height={240}>
+              <ScatterChart margin={{ top: 5, right: 20, left: 10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis type="number" dataKey="predicted" fontSize={10} stroke="#9ca3af" name="Predicted" />
+                <YAxis type="number" dataKey="residual" fontSize={10} stroke="#9ca3af" width={55} name="Residual" />
+                <Tooltip cursor={{ strokeDasharray: '3 3' }} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="4 4" />
+                <Scatter data={errorAnalysis.scatter} fill="#2563eb" fillOpacity={0.55} />
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="glass-panel p-5">
+            <div className="flex items-center gap-1 mb-1">
+              <h3 className="text-base font-semibold">Rolling MAE</h3>
+              <HelpTooltip text="Theo dõi độ lớn sai số tuyệt đối trung bình trượt để phát hiện các vùng thời gian mô hình hoạt động kém." />
+            </div>
+            <p className="text-xs text-gray-400 mb-3">
+              Cửa sổ trượt hiện tại: {errorAnalysis.summary.rolling_window} điểm.
+            </p>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={errorAnalysis.rolling_mae}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+                <XAxis dataKey="date" fontSize={10} stroke="#9ca3af" interval="preserveStartEnd" />
+                <YAxis fontSize={10} stroke="#9ca3af" width={55} />
+                <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Line type="monotone" dataKey="value" name="Rolling MAE" stroke="#f97316" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 

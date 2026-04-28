@@ -15,6 +15,8 @@ function App() {
     activeTab,
     setProgress,
     addTrainingEpoch,
+    setTrainingStatus,
+    addTrainingStatusEvent,
   } = useStore();
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -44,8 +46,24 @@ function App() {
               val_loss: typeof data.val_loss === 'number' ? data.val_loss : undefined,
             });
           }
+        } else if (data.type === 'status') {
+          const progressValue = typeof data.progress === 'number' ? data.progress : 0;
+          setTrainingStatus(data.phase ?? null, data.message ?? null, progressValue);
+          addTrainingStatusEvent({
+            phase: String(data.phase ?? 'status'),
+            message: String(data.message ?? 'Cập nhật trạng thái huấn luyện'),
+            progress: progressValue,
+            timestamp: new Date().toISOString(),
+          });
         } else if (data.type === 'complete') {
           setProgress(100);
+          setTrainingStatus(data.phase ?? 'complete', data.message ?? 'Huấn luyện đã hoàn tất.', 100);
+          addTrainingStatusEvent({
+            phase: String(data.phase ?? 'complete'),
+            message: String(data.message ?? 'Huấn luyện đã hoàn tất.'),
+            progress: 100,
+            timestamp: new Date().toISOString(),
+          });
         }
       } catch {
         // ignore malformed messages
@@ -64,7 +82,7 @@ function App() {
         }, RECONNECT_DELAY);
       }
     };
-  }, [setProgress, addTrainingEpoch]);
+  }, [setProgress, addTrainingEpoch, setTrainingStatus, addTrainingStatusEvent]);
 
   useEffect(() => {
     connectRef.current = connect;

@@ -82,10 +82,132 @@ class ProphetComponent(BaseModel):
     yearly: Optional[float] = None
 
 
+class TrainingPreprocessingSummary(BaseModel):
+    target_column: str
+    source_column: str
+    aggregation: str
+    rows_original: int
+    rows_after_dropna: int
+    rows_after_resample: int
+    rows_after_trim: int
+    invalid_dates: int
+    missing_targets: int
+    trimmed_leading_zero_rows: int
+    trimmed_trailing_zero_rows: int
+    start_date: str
+    end_date: str
+    normalized_for_model: bool = False
+    normalization_method: Optional[str] = None
+    normalized_range: Optional[List[float]] = None
+    original_min: Optional[float] = None
+    original_max: Optional[float] = None
+
+
+class BacktestFold(BaseModel):
+    label: str
+    start_date: str
+    end_date: str
+    point_count: int
+    mae: float
+    rmse: float
+    mape: float
+
+
+class HorizonMetric(BaseModel):
+    horizon: int
+    point_count: int
+    mae: float
+    rmse: float
+    mape: float
+
+
+class BacktestPreviewPoint(BaseModel):
+    fold: str
+    date: str
+    actual: float
+    predicted: float
+    step: int
+
+
+class BacktestSummary(BaseModel):
+    method: str
+    description: str
+    folds: List[BacktestFold]
+    horizon_metrics: List[HorizonMetric]
+    preview_points: List[BacktestPreviewPoint]
+
+
+class ErrorHistogramBin(BaseModel):
+    label: str
+    bin_start: float
+    bin_end: float
+    count: int
+
+
+class ErrorScatterPoint(BaseModel):
+    date: str
+    predicted: float
+    actual: float
+    residual: float
+    abs_error: float
+
+
+class RollingErrorPoint(BaseModel):
+    date: str
+    value: float
+
+
+class ErrorAnalysisSummary(BaseModel):
+    mean_residual: float
+    std_residual: float
+    max_abs_error: float
+    p90_abs_error: float
+    positive_residual_ratio: float
+    negative_residual_ratio: float
+    rolling_window: int
+    sample_size: int
+
+
+class ErrorAnalysis(BaseModel):
+    summary: ErrorAnalysisSummary
+    histogram: List[ErrorHistogramBin]
+    scatter: List[ErrorScatterPoint]
+    rolling_mae: List[RollingErrorPoint]
+
+
+class SplitSegment(BaseModel):
+    label: str
+    role: str
+    count: int
+    start_date: str
+    end_date: str
+
+
+class SplitSummary(BaseModel):
+    mode: str
+    description: str
+    segments: List[SplitSegment]
+    look_back: Optional[int] = None
+    validation_split: Optional[float] = None
+    total_points: int
+    sequence_count: Optional[int] = None
+    train_count: Optional[int] = None
+    validation_count: Optional[int] = None
+
+
 class TrainingResponse(BaseModel):
     metrics: Metrics
     data: List[DataPoint]
     training_history: Optional[List[TrainingHistoryPoint]] = None
     prophet_components: Optional[List[ProphetComponent]] = None
+    backtest: Optional[BacktestSummary] = None
+    error_analysis: Optional[ErrorAnalysis] = None
+    split_summary: Optional[SplitSummary] = None
     model_type: str = "unknown"
     target_column: str = "quantity"
+    preprocessing_summary: Optional[TrainingPreprocessingSummary] = None
+    training_config: Optional[Dict[str, Any]] = None
+    run_id: Optional[str] = None
+    model_version: Optional[str] = None
+    created_at: Optional[str] = None
+    artifact_dir: Optional[str] = None

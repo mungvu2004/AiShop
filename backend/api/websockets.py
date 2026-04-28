@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import WebSocket
 from typing import List
 
@@ -18,5 +19,15 @@ class ConnectionManager:
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
             await connection.send_json(message)
+
+    def broadcast_sync(self, message: dict):
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(self.broadcast(message))
+            else:
+                asyncio.run(self.broadcast(message))
+        except RuntimeError:
+            asyncio.run(self.broadcast(message))
 
 manager = ConnectionManager()

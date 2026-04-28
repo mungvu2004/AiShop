@@ -6,6 +6,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from backend.schemas.models import ProphetConfig, LSTMConfig, TrainingResponse
 from backend.api.websockets import manager
 from backend.services.data_pipeline import load_and_preprocess
+from backend.services.model_registry import get_training_run, list_training_runs, save_training_run
 from backend.services.prophet_service import train_prophet
 from backend.services.lstm_service import train_lstm
 from backend.services.data_service import get_data_info
@@ -67,6 +68,19 @@ def train_options():
     }
 
 
+@router.get("/models/runs")
+def model_runs():
+    return {"items": list_training_runs()}
+
+
+@router.get("/models/runs/{run_id}")
+def model_run_detail(run_id: str):
+    payload = get_training_run(run_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy run_id={run_id}")
+    return payload
+
+
 @router.websocket("/ws/progress")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -80,7 +94,18 @@ async def websocket_endpoint(websocket: WebSocket):
 @router.post("/train/prophet", response_model=TrainingResponse)
 def api_train_prophet(config: ProphetConfig):
     try:
-        df = load_and_preprocess(DATA_PATH, aggregation=config.aggregation, target_column=config.target_column)
+        manager.broadcast_sync({
+            "type": "status",
+            "progress": 5,
+            "phase": "prophet_preprocessing",
+            "message": "Đang đọc dữ liệu, tổng hợp chuỗi và chuẩn bị cho Prophet.",
+        })
+        df, preprocessing_summary = load_and_preprocess(
+            DATA_PATH,
+            aggregation=config.aggregation,
+            target_column=config.target_column,
+            include_summary=True,
+        )
         if len(df) < 14:
             raise HTTPException(status_code=400, detail="Dữ liệu quá ngắn để huấn luyện Prophet ổn định.")
         result = train_prophet(
@@ -98,7 +123,39 @@ def api_train_prophet(config: ProphetConfig):
             interval_width=config.interval_width,
             uncertainty_samples=config.uncertainty_samples,
         )
+        trained_model = result.pop("_trained_model", None)
+        registry_entry = save_training_run(
+            model_type=result.get("model_type", "Prophet"),
+            metrics=result["metrics"],
+            training_config=config.model_dump(),
+            preprocessing_summary={
+                **preprocessing_summary,
+                "normalized_for_model": False,
+                "normalization_method": None,
+                "normalized_range": None,
+                "original_min": None,
+                "original_max": None,
+            },
+            backtest=result.get("backtest"),
+            error_analysis=result.get("error_analysis"),
+            split_summary=result.get("split_summary"),
+            artifact_payload={
+                "trained_model": trained_model,
+            },
+        )
         result["target_column"] = config.target_column
+        result["preprocessing_summary"] = registry_entry["preprocessing_summary"]
+        result["training_config"] = config.model_dump()
+        result["run_id"] = registry_entry["run_id"]
+        result["model_version"] = registry_entry["model_version"]
+        result["created_at"] = registry_entry["created_at"]
+        result["artifact_dir"] = registry_entry["artifact_dir"]
+        manager.broadcast_sync({
+            "type": "complete",
+            "progress": 100,
+            "phase": "prophet_complete",
+            "message": "Huấn luyện Prophet và các bước đánh giá đã hoàn tất.",
+        })
         return result
     except HTTPException:
         raise
@@ -111,7 +168,18 @@ def api_train_prophet(config: ProphetConfig):
 @router.post("/train/lstm", response_model=TrainingResponse)
 async def api_train_lstm(config: LSTMConfig):
     try:
-        df = load_and_preprocess(DATA_PATH, aggregation=config.aggregation, target_column=config.target_column)
+        await manager.broadcast({
+            "type": "status",
+            "progress": 4,
+            "phase": "lstm_preload",
+            "message": "Đang đọc dữ liệu và dựng chuỗi đầu vào cho mô hình recurrent.",
+        })
+        df, preprocessing_summary = load_and_preprocess(
+            DATA_PATH,
+            aggregation=config.aggregation,
+            target_column=config.target_column,
+            include_summary=True,
+        )
         minimum_rows = config.look_back + 5
         if len(df) < minimum_rows:
             raise HTTPException(
@@ -141,7 +209,35 @@ async def api_train_lstm(config: LSTMConfig):
             shuffle=config.shuffle,
             model_arch=config.model_arch,
         )
+        trained_model = result.pop("_trained_model", None)
+        scaler = result.pop("_scaler", None)
+        registry_entry = save_training_run(
+            model_type=result.get("model_type", config.model_arch),
+            metrics=result["metrics"],
+            training_config=config.model_dump(),
+            preprocessing_summary={
+                **preprocessing_summary,
+                "normalized_for_model": True,
+                "normalization_method": "MinMaxScaler",
+                "normalized_range": [0.0, 1.0],
+                "original_min": float(df['y'].min()),
+                "original_max": float(df['y'].max()),
+            },
+            backtest=result.get("backtest"),
+            error_analysis=result.get("error_analysis"),
+            split_summary=result.get("split_summary"),
+            artifact_payload={
+                "trained_model": trained_model,
+                "scaler": scaler,
+            },
+        )
         result["target_column"] = config.target_column
+        result["preprocessing_summary"] = registry_entry["preprocessing_summary"]
+        result["training_config"] = config.model_dump()
+        result["run_id"] = registry_entry["run_id"]
+        result["model_version"] = registry_entry["model_version"]
+        result["created_at"] = registry_entry["created_at"]
+        result["artifact_dir"] = registry_entry["artifact_dir"]
         return result
     except HTTPException:
         raise

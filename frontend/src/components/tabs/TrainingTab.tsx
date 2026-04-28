@@ -3,14 +3,20 @@ import type { ReactNode } from 'react';
 import axios from 'axios';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, AreaChart, Area,
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar,
 } from 'recharts';
 import {
-  Play, Loader2, Settings2, TrendingDown, BarChart2, BrainCircuit, Radar, Send, Layers3,
+  Play, Loader2, Settings2, TrendingDown, BarChart2, BrainCircuit, Radar, Send, Layers3, GitBranch, Route,
 } from 'lucide-react';
 import { HelpTooltip } from '../HelpTooltip';
 import { useStore } from '../../store/useStore';
-import type { ModelArch, TargetColumn } from '../../store/useStore';
+import type {
+  BacktestSummary,
+  ModelArch,
+  SplitSummary,
+  TargetColumn,
+  TrainingPreprocessingSummary,
+} from '../../store/useStore';
 
 const inputCls =
   'w-full bg-white/65 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -232,17 +238,212 @@ const ParameterPreview = ({
   </div>
 );
 
-const JsonPreview = ({ payload }: { payload: object }) => (
+const JsonPreview = ({
+  payload,
+  title = 'Payload gửi xuống backend',
+}: {
+  payload: object;
+  title?: string;
+}) => (
   <div className="rounded-2xl border border-gray-200 bg-gray-950 p-4">
     <div className="flex items-center gap-2 mb-3 text-white/90">
       <Layers3 className="w-4 h-4 text-cyan-300" />
-      <h3 className="text-sm font-semibold">Payload gửi xuống backend</h3>
+      <h3 className="text-sm font-semibold">{title}</h3>
     </div>
     <pre className="text-xs leading-relaxed text-cyan-100 overflow-x-auto whitespace-pre-wrap">
       {JSON.stringify(payload, null, 2)}
     </pre>
   </div>
 );
+
+const TrainingPreprocessingPanel = ({
+  summary,
+}: {
+  summary: TrainingPreprocessingSummary | null;
+}) => {
+  if (!summary) {
+    return (
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 p-4 text-sm text-gray-400">
+        Chưa có metadata tiền xử lý từ phiên train nào gần đây.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white/70 p-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {[
+          ['Mục tiêu', summary.target_column],
+          ['Cột nguồn', summary.source_column],
+          ['Tổng hợp', summary.aggregation],
+          ['Khoảng dữ liệu', `${summary.start_date} → ${summary.end_date}`],
+          ['Dòng gốc', summary.rows_original.toLocaleString()],
+          ['Sau dropna', summary.rows_after_dropna.toLocaleString()],
+          ['Sau resample', summary.rows_after_resample.toLocaleString()],
+          ['Sau trim', summary.rows_after_trim.toLocaleString()],
+          ['Ngày lỗi', summary.invalid_dates.toLocaleString()],
+          ['Target thiếu', summary.missing_targets.toLocaleString()],
+          ['Trim đầu', summary.trimmed_leading_zero_rows.toLocaleString()],
+          ['Trim cuối', summary.trimmed_trailing_zero_rows.toLocaleString()],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-xl border border-gray-100 bg-white/80 px-3 py-2">
+            <div className="text-[11px] uppercase tracking-[0.14em] text-gray-400">{label}</div>
+            <div className="text-sm font-medium text-gray-800 mt-1">{value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-gray-100 bg-white/80 px-3 py-3">
+        <div className="text-[11px] uppercase tracking-[0.14em] text-gray-400">Chuẩn hóa cho mô hình</div>
+        <div className="text-sm font-medium text-gray-800 mt-1">
+          {summary.normalized_for_model
+            ? `${summary.normalization_method ?? 'Có'} · range ${
+                summary.normalized_range?.join(' → ') ?? '—'
+              } · min/max gốc ${summary.original_min?.toFixed(2) ?? '—'} / ${summary.original_max?.toFixed(2) ?? '—'}`
+            : 'Không chuẩn hóa ở bước train của mô hình này'}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const segmentStyles: Record<string, { bar: string; pill: string; text: string }> = {
+  context: { bar: 'bg-slate-300', pill: 'bg-slate-100', text: 'text-slate-700' },
+  train: { bar: 'bg-blue-500', pill: 'bg-blue-100', text: 'text-blue-700' },
+  validation: { bar: 'bg-amber-400', pill: 'bg-amber-100', text: 'text-amber-700' },
+  forecast: { bar: 'bg-emerald-400', pill: 'bg-emerald-100', text: 'text-emerald-700' },
+};
+
+const SplitTimelinePanel = ({
+  splitSummary,
+}: {
+  splitSummary: SplitSummary | null;
+}) => {
+  if (!splitSummary || splitSummary.segments.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 p-4 text-sm text-gray-400">
+        Chưa có timeline train/validation từ phiên train nào gần đây.
+      </div>
+    );
+  }
+
+  const total = splitSummary.segments.reduce((sum, segment) => sum + Math.max(segment.count, 0), 0) || 1;
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-gray-200 bg-white/70 p-4">
+      <p className="text-xs leading-relaxed text-gray-500">{splitSummary.description}</p>
+      <div className="flex h-4 overflow-hidden rounded-full bg-gray-100">
+        {splitSummary.segments.map((segment) => {
+          const style = segmentStyles[segment.role] ?? segmentStyles.context;
+          const width = `${Math.max((segment.count / total) * 100, 4)}%`;
+          return <div key={`${segment.role}-${segment.label}`} className={style.bar} style={{ width }} title={`${segment.label}: ${segment.count}`} />;
+        })}
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {splitSummary.segments.map((segment) => {
+          const style = segmentStyles[segment.role] ?? segmentStyles.context;
+          return (
+            <div key={`${segment.role}-${segment.label}-card`} className="rounded-xl border border-gray-100 bg-white/80 p-3">
+              <div className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${style.pill} ${style.text}`}>
+                {segment.label}
+              </div>
+              <div className="mt-2 text-sm font-semibold text-gray-800">{segment.count.toLocaleString()} điểm</div>
+              <div className="mt-1 text-xs text-gray-500">{segment.start_date} → {segment.end_date}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="grid gap-3 md:grid-cols-3">
+        <SummaryCard label="Tổng điểm" value={splitSummary.total_points.toLocaleString()} helper="Số mốc lịch sử sau tiền xử lý." />
+        <SummaryCard label="Look back" value={splitSummary.look_back?.toString() ?? '—'} helper="Chiều dài cửa sổ ngữ cảnh dùng cho recurrent." />
+        <SummaryCard label="Validation split" value={splitSummary.validation_split !== null && splitSummary.validation_split !== undefined ? splitSummary.validation_split.toFixed(2) : '0.00'} helper="Tỷ lệ sample ở cuối chuỗi dùng cho val_loss." />
+      </div>
+    </div>
+  );
+};
+
+const BacktestPanel = ({
+  backtest,
+}: {
+  backtest: BacktestSummary | null;
+}) => {
+  if (!backtest) {
+    return (
+      <div className="rounded-2xl border border-dashed border-gray-200 bg-white/60 p-4 text-sm text-gray-400">
+        Chưa có dữ liệu backtest từ phiên train nào gần đây.
+      </div>
+    );
+  }
+
+  const previewSample = backtest.preview_points.length > 160 ? backtest.preview_points.slice(-160) : backtest.preview_points;
+  return (
+    <div className="space-y-4 rounded-2xl border border-gray-200 bg-white/70 p-4">
+      <p className="text-xs leading-relaxed text-gray-500">{backtest.description}</p>
+      <div className="grid gap-3 md:grid-cols-3">
+        <SummaryCard label="Phương pháp" value={backtest.method} helper="Cách backend tạo tập đánh giá sau train." />
+        <SummaryCard label="Số fold" value={backtest.folds.length.toString()} helper="Mỗi fold là một đoạn đánh giá độc lập." />
+        <SummaryCard label="Tối đa horizon" value={`${backtest.horizon_metrics.at(-1)?.horizon ?? 0}`} helper="Số bước tương lai lớn nhất được tổng hợp." />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <div className="rounded-2xl border border-gray-200 bg-white/80 p-4">
+          <div className="flex items-center gap-1 mb-2">
+            <h4 className="text-sm font-semibold text-gray-800">Sai số theo fold</h4>
+            <HelpTooltip text="Mỗi cột thể hiện chất lượng trên một đoạn backtest riêng. Fold nào lệch mạnh sẽ lộ ra ngay." />
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={backtest.folds}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+              <XAxis dataKey="label" fontSize={11} stroke="#9ca3af" />
+              <YAxis fontSize={11} stroke="#9ca3af" width={65} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="mae" name="MAE" fill="#4f46e5" radius={[6, 6, 0, 0]} />
+              <Bar dataKey="rmse" name="RMSE" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white/80 p-4">
+          <div className="flex items-center gap-1 mb-2">
+            <h4 className="text-sm font-semibold text-gray-800">Sai số theo horizon</h4>
+            <HelpTooltip text="Giúp xem dự báo 1 bước, 2 bước, 3 bước... đang xuống chất lượng ra sao khi nhìn xa hơn." />
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={backtest.horizon_metrics}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+              <XAxis dataKey="horizon" fontSize={11} stroke="#9ca3af" />
+              <YAxis fontSize={11} stroke="#9ca3af" width={65} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="mae" name="MAE" stroke="#4f46e5" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="rmse" name="RMSE" stroke="#ef4444" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="mape" name="MAPE %" stroke="#10b981" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-200 bg-white/80 p-4">
+        <div className="flex items-center gap-1 mb-2">
+          <h4 className="text-sm font-semibold text-gray-800">Preview thực tế vs backtest</h4>
+          <HelpTooltip text="Một lát cắt nhỏ từ các fold để nhìn trực tiếp mô hình dự báo lệch thế nào trên từng giai đoạn." />
+        </div>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={previewSample}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
+            <XAxis dataKey="date" fontSize={10} stroke="#9ca3af" interval="preserveStartEnd" />
+            <YAxis fontSize={10} stroke="#9ca3af" width={60} />
+            <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Line type="monotone" dataKey="actual" name="Thực tế" stroke="#111827" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="predicted" name="Backtest dự báo" stroke="#6366f1" strokeWidth={2} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+};
 
 export const TrainingTab = () => {
   const {
@@ -253,8 +454,15 @@ export const TrainingTab = () => {
     progress, setProgress,
     trainingHistory, clearTrainingHistory, setTrainingHistory,
     prophetComponents,
+    trainingPreprocessingSummary, setTrainingPreprocessingSummary,
+    trainingConfigSnapshot, setTrainingConfigSnapshot,
+    setTrainedRunId, setTrainedModelVersion, setTrainedArtifactDir,
     setMetrics, setChartData,
     setProphetComponents, setTrainedModelType, setTrainedTargetColumn,
+    backtest, setBacktest,
+    errorAnalysis, setErrorAnalysis,
+    splitSummary, setSplitSummary,
+    trainingPhase, trainingStatusText, trainingStatusEvents, clearTrainingStatus,
     addToast,
   } = useStore();
 
@@ -265,10 +473,19 @@ export const TrainingTab = () => {
 
   const handleTrain = async () => {
     clearTrainingHistory();
+    clearTrainingStatus();
     setProgress(0);
     setLogs([]);
     setIsTraining(true);
     setProphetComponents(null);
+    setTrainingPreprocessingSummary(null);
+    setTrainingConfigSnapshot(null);
+    setTrainedRunId(null);
+    setTrainedModelVersion(null);
+    setTrainedArtifactDir(null);
+    setBacktest(null);
+    setErrorAnalysis(null);
+    setSplitSummary(null);
 
     const endpoint = modelType === 'Prophet' ? '/train/prophet' : '/train/lstm';
     const payload = modelType === 'Prophet' ? prophetConfig : lstmConfig;
@@ -286,6 +503,14 @@ export const TrainingTab = () => {
       setTrainedTargetColumn(res.data.target_column ?? payload.target_column);
       setTrainingHistory(res.data.training_history ?? []);
       setProphetComponents(res.data.prophet_components ?? null);
+      setTrainingPreprocessingSummary(res.data.preprocessing_summary ?? null);
+      setTrainingConfigSnapshot(res.data.training_config ?? null);
+      setTrainedRunId(res.data.run_id ?? null);
+      setTrainedModelVersion(res.data.model_version ?? null);
+      setTrainedArtifactDir(res.data.artifact_dir ?? null);
+      setBacktest(res.data.backtest ?? null);
+      setErrorAnalysis(res.data.error_analysis ?? null);
+      setSplitSummary(res.data.split_summary ?? null);
 
       const { mae, rmse, mape } = res.data.metrics;
       log(`Hoàn tất. MAE=${mae.toFixed(2)}, RMSE=${rmse.toFixed(2)}, MAPE=${mape.toFixed(2)}%.`);
@@ -797,8 +1022,31 @@ export const TrainingTab = () => {
                 entries={parameterEntries}
               />
               <div className="mt-4">
-                <JsonPreview payload={activePayload} />
+                <JsonPreview payload={activePayload} title="Payload đang cấu hình trên UI" />
               </div>
+              {trainingConfigSnapshot && (
+                <div className="mt-4">
+                  <JsonPreview payload={trainingConfigSnapshot} title="Cấu hình backend đã dùng ở phiên gần nhất" />
+                </div>
+              )}
+            </div>
+
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Radar className="w-4 h-4 text-emerald-500" />
+                <h3 className="text-base font-semibold">Tiền xử lý của phiên train gần nhất</h3>
+                <HelpTooltip text="Metadata này do backend trả về ngay trong response huấn luyện. Nó cho biết dữ liệu đã được lọc, tổng hợp và chuẩn hóa như thế nào trước khi mô hình chạy." />
+              </div>
+              <TrainingPreprocessingPanel summary={trainingPreprocessingSummary} />
+            </div>
+
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Route className="w-4 h-4 text-sky-500" />
+                <h3 className="text-base font-semibold">Timeline train / validation</h3>
+                <HelpTooltip text="Cho biết backend đã chia ngữ cảnh, target train, target validation và vùng forecast như thế nào cho phiên train gần nhất." />
+              </div>
+              <SplitTimelinePanel splitSummary={splitSummary} />
             </div>
 
             {(isTraining || progress > 0) && (
@@ -815,6 +1063,11 @@ export const TrainingTab = () => {
                     style={{ width: `${progress}%` }}
                   />
                 </div>
+                {trainingStatusText && (
+                  <p className="text-xs text-blue-700 mt-2">
+                    {trainingPhase ? `${trainingPhase}: ` : ''}{trainingStatusText}
+                  </p>
+                )}
                 {latestPoint && (
                   <p className="text-xs text-gray-400 mt-2">
                     Epoch {latestPoint.epoch} · loss {latestPoint.loss.toFixed(6)}
@@ -823,6 +1076,15 @@ export const TrainingTab = () => {
                 )}
               </div>
             )}
+
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <GitBranch className="w-4 h-4 text-fuchsia-500" />
+                <h3 className="text-base font-semibold">Backtest và rolling validation</h3>
+                <HelpTooltip text="Tập hợp sai số theo fold và theo horizon để xem mô hình ổn định đến đâu sau khi train." />
+              </div>
+              <BacktestPanel backtest={backtest} />
+            </div>
 
             {trainingHistory.length > 0 && (
               <div className="glass-panel p-5">
@@ -864,6 +1126,22 @@ export const TrainingTab = () => {
               </div>
             )}
 
+            {errorAnalysis && (
+              <div className="glass-panel p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <TrendingDown className="w-4 h-4 text-rose-500" />
+                  <h3 className="text-base font-semibold">Tóm tắt lỗi sau train</h3>
+                  <HelpTooltip text="Một lớp tóm tắt nhanh trước khi bạn sang tab Kiểm thử để xem đầy đủ histogram, scatter và rolling MAE." />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <SummaryCard label="Residual trung bình" value={errorAnalysis.summary.mean_residual.toFixed(2)} helper="Gần 0 là tốt, lệch dương là đang dự báo thấp." />
+                  <SummaryCard label="Độ lệch chuẩn" value={errorAnalysis.summary.std_residual.toFixed(2)} helper="Dao động phần dư càng nhỏ càng ổn định." />
+                  <SummaryCard label="P90 |error|" value={errorAnalysis.summary.p90_abs_error.toFixed(2)} helper="Mức lỗi mà 90% điểm nằm dưới." />
+                  <SummaryCard label="Cỡ mẫu" value={errorAnalysis.summary.sample_size.toLocaleString()} helper="Số điểm lịch sử được dùng để phân tích residual." />
+                </div>
+              </div>
+            )}
+
             {prophetComponents && prophetComponents.length > 0 && <ProphetComponentsChart />}
 
             <div className="glass-panel p-5 min-h-[18rem]">
@@ -879,6 +1157,22 @@ export const TrainingTab = () => {
                   logs.map((entry, index) => <div key={`${entry}-${index}`}>{entry}</div>)
                 )}
               </div>
+              {trainingStatusEvents.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <div className="text-xs font-semibold text-gray-500 uppercase tracking-[0.14em]">Stage timeline</div>
+                  <div className="space-y-2">
+                    {trainingStatusEvents.slice().reverse().map((event, index) => (
+                      <div key={`${event.phase}-${event.timestamp}-${index}`} className="rounded-xl border border-gray-100 bg-white/80 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold text-gray-700">{event.phase}</span>
+                          <span className="text-[11px] text-gray-400">{event.progress.toFixed(0)}%</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1">{event.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

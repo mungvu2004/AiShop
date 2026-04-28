@@ -27,6 +27,124 @@ export interface ProphetComponent {
   yearly: number | null;
 }
 
+export interface TrainingPreprocessingSummary {
+  target_column: string;
+  source_column: string;
+  aggregation: string;
+  rows_original: number;
+  rows_after_dropna: number;
+  rows_after_resample: number;
+  rows_after_trim: number;
+  invalid_dates: number;
+  missing_targets: number;
+  trimmed_leading_zero_rows: number;
+  trimmed_trailing_zero_rows: number;
+  start_date: string;
+  end_date: string;
+  normalized_for_model: boolean;
+  normalization_method?: string | null;
+  normalized_range?: number[] | null;
+  original_min?: number | null;
+  original_max?: number | null;
+}
+
+export interface BacktestFold {
+  label: string;
+  start_date: string;
+  end_date: string;
+  point_count: number;
+  mae: number;
+  rmse: number;
+  mape: number;
+}
+
+export interface HorizonMetric {
+  horizon: number;
+  point_count: number;
+  mae: number;
+  rmse: number;
+  mape: number;
+}
+
+export interface BacktestPreviewPoint {
+  fold: string;
+  date: string;
+  actual: number;
+  predicted: number;
+  step: number;
+}
+
+export interface BacktestSummary {
+  method: string;
+  description: string;
+  folds: BacktestFold[];
+  horizon_metrics: HorizonMetric[];
+  preview_points: BacktestPreviewPoint[];
+}
+
+export interface ErrorHistogramBin {
+  label: string;
+  bin_start: number;
+  bin_end: number;
+  count: number;
+}
+
+export interface ErrorScatterPoint {
+  date: string;
+  predicted: number;
+  actual: number;
+  residual: number;
+  abs_error: number;
+}
+
+export interface RollingErrorPoint {
+  date: string;
+  value: number;
+}
+
+export interface ErrorAnalysis {
+  summary: {
+    mean_residual: number;
+    std_residual: number;
+    max_abs_error: number;
+    p90_abs_error: number;
+    positive_residual_ratio: number;
+    negative_residual_ratio: number;
+    rolling_window: number;
+    sample_size: number;
+  };
+  histogram: ErrorHistogramBin[];
+  scatter: ErrorScatterPoint[];
+  rolling_mae: RollingErrorPoint[];
+}
+
+export interface SplitSegment {
+  label: string;
+  role: string;
+  count: number;
+  start_date: string;
+  end_date: string;
+}
+
+export interface SplitSummary {
+  mode: string;
+  description: string;
+  segments: SplitSegment[];
+  look_back?: number | null;
+  validation_split?: number | null;
+  total_points: number;
+  sequence_count?: number | null;
+  train_count?: number | null;
+  validation_count?: number | null;
+}
+
+export interface TrainingStatusEvent {
+  phase: string;
+  message: string;
+  progress: number;
+  timestamp: string;
+}
+
 export interface DataStats {
   total_records: number;
   clean_records: number;
@@ -106,11 +224,42 @@ interface AppState {
   prophetComponents: ProphetComponent[] | null;
   setProphetComponents: (c: ProphetComponent[] | null) => void;
 
+  trainingPreprocessingSummary: TrainingPreprocessingSummary | null;
+  setTrainingPreprocessingSummary: (summary: TrainingPreprocessingSummary | null) => void;
+
+  trainingConfigSnapshot: Record<string, unknown> | null;
+  setTrainingConfigSnapshot: (snapshot: Record<string, unknown> | null) => void;
+
+  trainedRunId: string | null;
+  setTrainedRunId: (id: string | null) => void;
+
+  trainedModelVersion: string | null;
+  setTrainedModelVersion: (version: string | null) => void;
+
+  trainedArtifactDir: string | null;
+  setTrainedArtifactDir: (dir: string | null) => void;
+
   trainedModelType: string | null;
   setTrainedModelType: (t: string | null) => void;
 
   trainedTargetColumn: TargetColumn | null;
   setTrainedTargetColumn: (t: TargetColumn | null) => void;
+
+  backtest: BacktestSummary | null;
+  setBacktest: (payload: BacktestSummary | null) => void;
+
+  errorAnalysis: ErrorAnalysis | null;
+  setErrorAnalysis: (payload: ErrorAnalysis | null) => void;
+
+  splitSummary: SplitSummary | null;
+  setSplitSummary: (payload: SplitSummary | null) => void;
+
+  trainingPhase: string | null;
+  trainingStatusText: string | null;
+  trainingStatusEvents: TrainingStatusEvent[];
+  setTrainingStatus: (phase: string | null, message: string | null, progress: number) => void;
+  addTrainingStatusEvent: (event: TrainingStatusEvent) => void;
+  clearTrainingStatus: () => void;
 
   dataInfo: DataInfo | null;
   setDataInfo: (info: DataInfo) => void;
@@ -189,11 +338,55 @@ export const useStore = create<AppState>((set) => ({
   prophetComponents: null,
   setProphetComponents: (c) => set({ prophetComponents: c }),
 
+  trainingPreprocessingSummary: null,
+  setTrainingPreprocessingSummary: (summary) => set({ trainingPreprocessingSummary: summary }),
+
+  trainingConfigSnapshot: null,
+  setTrainingConfigSnapshot: (snapshot) => set({ trainingConfigSnapshot: snapshot }),
+
+  trainedRunId: null,
+  setTrainedRunId: (id) => set({ trainedRunId: id }),
+
+  trainedModelVersion: null,
+  setTrainedModelVersion: (version) => set({ trainedModelVersion: version }),
+
+  trainedArtifactDir: null,
+  setTrainedArtifactDir: (dir) => set({ trainedArtifactDir: dir }),
+
   trainedModelType: null,
   setTrainedModelType: (t) => set({ trainedModelType: t }),
 
   trainedTargetColumn: null,
   setTrainedTargetColumn: (t) => set({ trainedTargetColumn: t }),
+
+  backtest: null,
+  setBacktest: (payload) => set({ backtest: payload }),
+
+  errorAnalysis: null,
+  setErrorAnalysis: (payload) => set({ errorAnalysis: payload }),
+
+  splitSummary: null,
+  setSplitSummary: (payload) => set({ splitSummary: payload }),
+
+  trainingPhase: null,
+  trainingStatusText: null,
+  trainingStatusEvents: [],
+  setTrainingStatus: (phase, message, progress) =>
+    set({
+      trainingPhase: phase,
+      trainingStatusText: message,
+      progress,
+    }),
+  addTrainingStatusEvent: (event) =>
+    set((state) => ({
+      trainingStatusEvents: [...state.trainingStatusEvents.slice(-39), event],
+    })),
+  clearTrainingStatus: () =>
+    set({
+      trainingPhase: null,
+      trainingStatusText: null,
+      trainingStatusEvents: [],
+    }),
 
   dataInfo: null,
   setDataInfo: (info) => set({ dataInfo: info }),

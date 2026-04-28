@@ -11,7 +11,14 @@ const NAV_ITEMS: { id: ActiveTab; icon: ReactNode; label: string; desc: string }
 ];
 
 export const Sidebar = () => {
-  const { activeTab, setActiveTab, trainedModelType, trainedTargetColumn } = useStore();
+  const {
+    activeTab,
+    setActiveTab,
+    trainedModelType,
+    trainedTargetColumn,
+    trainedModelVersion,
+    trainedRunId,
+  } = useStore();
 
   const targetLabel: Record<string, string> = { quantity: 'Số lượng', sales: 'Doanh thu', profit: 'Lợi nhuận' };
 
@@ -49,8 +56,14 @@ export const Sidebar = () => {
         <div className="mt-4 px-3 py-2.5 bg-green-50 border border-green-200 rounded-lg text-xs space-y-0.5">
           <div className="font-semibold text-green-700">✓ Mô hình đã huấn luyện</div>
           <div className="text-green-600">{trainedModelType}</div>
+          {trainedModelVersion && (
+            <div className="text-green-500">Version: {trainedModelVersion}</div>
+          )}
           {trainedTargetColumn && (
             <div className="text-green-500">Mục tiêu: {targetLabel[trainedTargetColumn] ?? trainedTargetColumn}</div>
+          )}
+          {trainedRunId && (
+            <div className="text-green-400">Run: {trainedRunId}</div>
           )}
         </div>
       )}
